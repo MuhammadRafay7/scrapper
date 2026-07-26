@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+data/
+config/niche.yaml
+config/seeds.txt
+.pytest_cache/

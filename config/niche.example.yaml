@@ -1,0 +1,114 @@
+# ---------------------------------------------------------------------------
+# Niche definition. This is the file you edit per campaign.
+# Example niche below: commercial solar installers. Replace with your own.
+# ---------------------------------------------------------------------------
+
+database: data/scrapper.db
+
+niche:
+  name: "commercial solar installation companies"
+
+  # strong  = +4.0 each (max 3 counted per keyword)  -> only your niche says these
+  # medium  = +1.5 each                              -> adjacent / supporting terms
+  # weak    = +0.5 each                              -> generic industry words
+  # negative= -6.0 each                              -> hard signals it's the wrong niche
+  strong:
+    - solar installer
+    - solar installation
+    - photovoltaic
+    - commercial solar
+    - solar panel system
+    - solar EPC
+  medium:
+    - solar
+    - PV system
+    - kilowatt
+    - kWp
+    - net metering
+    - inverter
+    - battery storage
+    - renewable energy
+    - MCS certified
+    - NABCEP
+  weak:
+    - energy
+    - installation
+    - contractor
+    - quote
+    - commercial
+  negative:
+    - casino
+    - porn
+    - crypto airdrop
+    - essay writing service
+    - solar system planets      # astronomy sites poison "solar" queries
+    - horoscope
+
+  # A page must reach this (page score + half the domain score) before its
+  # emails are stored. Raise it for precision, lower it for volume.
+  page_threshold: 5.0
+  # A domain's first page must reach this or the whole domain is dropped.
+  domain_threshold: 4.0
+
+discovery:
+  # --- search API (optional but by far the widest net) ---
+  search:
+    provider: none            # serper | brave | google_cse | none
+    api_key_env: SERPER_API_KEY
+    per_query: 20
+    queries:
+      - '"commercial solar installer" contact email'
+      - 'solar installation company "contact us" -site:linkedin.com'
+      - 'solar EPC contractor directory members'
+
+  # --- explicit seed sites (one per line in the file, or inline here) ---
+  seeds: []
+  seed_file: seeds.txt         # relative to this config file; optional
+
+  # --- directories/listing pages: outbound links become new candidate sites ---
+  directories: []
+  #  - https://www.example-trade-association.org/member-directory
+
+  # After a domain is accepted, pull contact/about/team URLs from its sitemap.
+  use_sitemaps: true
+  sitemap_max_urls: 300
+
+crawl:
+  concurrency: 8               # total in-flight requests
+  per_domain_delay: 1.5        # seconds between hits on the SAME domain
+  timeout: 20
+  max_pages_per_domain: 40
+  max_depth: 2
+  max_total_pages: 20000
+  respect_robots: true         # leave this on
+  allow_subdomains: true
+  user_agent: "Mozilla/5.0 (compatible; NicheContactBot/1.0; +contact-scraper)"
+  priority_paths:              # crawled before everything else
+    - contact
+    - kontakt
+    - about
+    - team
+    - staff
+    - people
+    - impressum
+    - locations
+    - directory
+
+filters:
+  keep_role_addresses: true    # info@, sales@ ... set false for people only
+  require_matching_domain: false
+  blocked_email_patterns:      # merged on top of the sensible defaults
+    - noreply
+    - no-reply
+    - example.com
+    - sentry.io
+    - wixpress.com
+  blocked_domains:
+    - linkedin.com
+    - facebook.com
+    - instagram.com
+    - twitter.com
+    - x.com
+    - youtube.com
+    - yelp.com
+    - wikipedia.org

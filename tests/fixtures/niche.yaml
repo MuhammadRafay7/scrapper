@@ -1,0 +1,17 @@
+database: data/test.db
+niche:
+  name: "commercial solar installers"
+  strong: [solar installer, photovoltaic, commercial solar, solar installation]
+  medium: [solar, PV system, inverter, battery storage, kilowatt]
+  weak: [energy, installation, quote]
+  negative: [horoscope, casino]
+  page_threshold: 4.0
+  domain_threshold: 4.0
+crawl:
+  concurrency: 4
+  per_domain_delay: 0
+  max_depth: 2
+  max_pages_per_domain: 20
+  respect_robots: false
+discovery:
+  use_sitemaps: false
