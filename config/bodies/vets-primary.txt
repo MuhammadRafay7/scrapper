@@ -1,0 +1,15 @@
+Hi {{ first_name|there }},
+
+I'm putting together Occuin, a marketplace for pets and livestock in Europe,
+and we've started adding pages for veterinary practices.
+
+There's no cost. {{ business|Your practice }} would get its own site with your
+services, opening hours and an appointment calendar, and clients can book on it
+directly. It takes a few minutes to set up.
+
+Would that be useful to you? Happy to help you set it up if it's easier.
+
+{{ sender_name }}
+https://www.occuin.com/become-vet
+
+{{ opt_out }}

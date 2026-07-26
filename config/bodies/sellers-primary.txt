@@ -1,0 +1,15 @@
+Hi {{ first_name|there }},
+
+I'm putting together Occuin, a marketplace for pets and livestock in Europe,
+and I'm looking for sellers in your area to list on it early.
+
+There's no cost to list and it takes a few minutes to set up. You'd get a page
+for {{ business|your business }} with your photos and listings, and buyers
+message you directly.
+
+Would that be useful to you? Happy to set it up for you if it's easier.
+
+{{ sender_name }}
+https://www.occuin.com/become-seller
+
+{{ opt_out }}

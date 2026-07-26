@@ -88,6 +88,9 @@ class OsmConfig:
     per_tag_delay: float = 4.0
     # Grid size used when a whole-country query times out (3 -> 9 cells).
     bbox_grid: int = 3
+    # Prospecting mode: ignore places that already run their own website, and
+    # do not queue those sites for crawling.
+    skip_with_website: bool = False
 
 
 @dataclass

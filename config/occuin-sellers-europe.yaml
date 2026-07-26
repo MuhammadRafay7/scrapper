@@ -239,6 +239,11 @@ discovery:
       - landuse=animal_keeping
     countries: []                 # empty = all of Europe; override with --countries
     per_country_delay: 8.0
+    # Prospecting mode: only businesses with NO website of their own. They have no
+    # online sales channel, so Occuin is the channel. Applied as an Overpass tag
+    # negation, so the sweep is much faster and never queues their sites to crawl.
+    # Set false to go back to collecting everyone.
+    skip_with_website: true
 
   search:
     provider: none                # no budget

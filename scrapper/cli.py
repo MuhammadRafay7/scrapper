@@ -109,6 +109,7 @@ def cmd_export(args) -> None:
         min_score=args.min_score,
         personal_only=args.personal_only,
         matching_domain_only=args.matching_domain,
+        no_website=args.no_website,
         limit=args.limit,
     )
     path = export_mod.write(rows, args.out)
@@ -166,7 +167,8 @@ def cmd_reset(args) -> None:
 def _open_campaign(args):
     """(config, scrape store, shared outreach store, suppression list)"""
     cfg = campaign_mod.CampaignConfig.load(args.config)
-    return (cfg, Store(cfg.resolve(cfg.database)), Store(cfg.resolve(cfg.outreach_db)),
+    return (cfg, Store(cfg.resolve(cfg.database), readonly=True),
+            Store(cfg.resolve(cfg.outreach_db)),
             Suppression(cfg.resolve(cfg.suppression_db)))
 
 
@@ -208,6 +210,10 @@ def cmd_mail_build(args) -> None:
     print(f"Campaign '{cfg.id}': queued {s['queued']} new recipients")
     print(f"  already queued {s['already']}, suppressed {s['suppressed']}, "
           f"one-per-domain cap {s['domain_capped']}, excluded {s['excluded']}")
+    if s.get("has_website"):
+        print(f"  skipped {s['has_website']} that already have a website")
+    if s.get("other_campaign"):
+        print(f"  skipped {s['other_campaign']} already contacted by another campaign")
     store.close()
     out.close()
     sup.close()
@@ -265,11 +271,30 @@ def cmd_mail_send(args) -> None:
         transport = mailer.DryRun(outdir)
         print(f"DRY RUN - writing .eml files to {outdir} (add --live to actually send)")
 
-    with transport:
-        s = campaign_mod.send(cfg, store, out, sup, transport, limit=args.limit,
-                              on_send=progress)
+    archive = None
+    if args.live and cfg.archive.enabled:
+        archive = mailer.ImapArchive(cfg.archive.host, os.environ.get(cfg.smtp.user_env, ""),
+                                     os.environ.get(cfg.smtp.password_env, ""),
+                                     cfg.archive.folder)
+        archive.__enter__()
+        if archive.conn is None:
+            print(f"  note: could not open IMAP - sends will not be labelled "
+                  f"'{cfg.archive.folder}' (delivery is unaffected)")
+        else:
+            print(f"  filing copies under the '{cfg.archive.folder}' label")
+    try:
+        with transport:
+            s = campaign_mod.send(cfg, store, out, sup, transport, limit=args.limit,
+                                  on_send=progress, record=args.live, archive=archive)
+    finally:
+        if archive is not None:
+            archive.close()
     verb = "sent" if args.live else "rendered"
     print(f"{verb} {s['sent']}, failed {s['failed']}, suppressed {s['suppressed']}")
+    if args.live and s.get("archived"):
+        print(f"  labelled {s['archived']} under '{cfg.archive.folder}'")
+    if args.live and s["sent"]:
+        print(f"  recorded in {cfg.resolve(cfg.sent_json)}")
     if s["stopped"]:
         print(f"  stopped on the {s['stopped']} cap - rerun later to continue")
     if not args.live and s["sent"]:
@@ -318,6 +343,28 @@ def cmd_mail_status(args) -> None:
     store.close()
     out.close()
     sup.close()
+
+
+def cmd_mail_sent(args) -> None:
+    """Everyone contacted so far, as JSON. Reads the append-only ledger."""
+    import json
+    cfg = campaign_mod.CampaignConfig.load(args.config)
+    path = cfg.resolve(cfg.sent_json)
+    if not path.exists():
+        print(f"no sends recorded yet ({path})")
+        return
+    entries = [json.loads(ln) for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    if args.campaign:
+        entries = [e for e in entries if e.get("campaign") == args.campaign]
+    out = Path(args.out)
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps(entries, indent=2, ensure_ascii=False), encoding="utf-8")
+    by_campaign = {}
+    for e in entries:
+        by_campaign[e.get("campaign", "?")] = by_campaign.get(e.get("campaign", "?"), 0) + 1
+    print(f"Wrote {len(entries)} contacted businesses to {out}")
+    for k, v in sorted(by_campaign.items()):
+        print(f"  {k}: {v}")
 
 
 def cmd_suppress(args) -> None:
@@ -371,6 +418,8 @@ def build_parser() -> argparse.ArgumentParser:
     sp.add_argument("--personal-only", action="store_true", help="drop info@/sales@ addresses")
     sp.add_argument("--matching-domain", action="store_true",
                     help="only emails on the same domain as the site")
+    sp.add_argument("--no-website", action="store_true",
+                    help="only businesses with no website of their own")
     sp.add_argument("--limit", type=int)
     sp.set_defaults(func=cmd_export, is_async=False)
 
@@ -414,6 +463,11 @@ def build_parser() -> argparse.ArgumentParser:
     sp = with_campaign(msub.add_parser("test", help="send one message to yourself"))
     sp.add_argument("--to", required=True, help="your own address")
     sp.set_defaults(func=cmd_mail_test)
+
+    sp = with_campaign(msub.add_parser("sent", help="export everyone contacted, as JSON"))
+    sp.add_argument("-o", "--out", default="data/sent.json")
+    sp.add_argument("--campaign", help="filter to one campaign id")
+    sp.set_defaults(func=cmd_mail_sent)
 
     sp = with_campaign(msub.add_parser("status", help="queue and throttle status"))
     sp.set_defaults(func=cmd_mail_status)

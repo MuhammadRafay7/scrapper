@@ -6,7 +6,7 @@ import asyncio
 from urllib.parse import urlparse
 
 from .config import Config
-from .db import Store
+from .db import WEBSITE_OWN, WEBSITE_UNKNOWN, Store
 from .discover import expand_sitemap
 from .extract import find_emails, parse
 from .net import Fetcher, looks_fetchable, normalize_url, registrable_domain
@@ -75,7 +75,7 @@ class Crawler:
         # Directories are harvested too: many publish member emails directly on
         # their own listing pages (breed societies, mart directories) rather than
         # only linking out. The page score still has to clear the niche gate.
-        self._harvest(page, domain, score, self._domain_score(domain))
+        self._harvest(page, domain, score, self._domain_score(domain), kind)
 
         self._enqueue_links(page, domain, depth, kind)
         self.store.finish_page(url, "done", resp.status, score.value, page.title)
@@ -98,7 +98,8 @@ class Crawler:
         self.stats["rejected"] += 1
         return False
 
-    def _harvest(self, page, domain: str, score: Score, domain_score: float) -> None:
+    def _harvest(self, page, domain: str, score: Score, domain_score: float,
+                 kind: str = "site") -> None:
         cfg = self.cfg
         combined = round(score.value + domain_score * 0.5, 2)
         if combined < cfg.niche.page_threshold:
@@ -124,6 +125,9 @@ class Crawler:
                 "source_url": page.url,
                 "page_title": page.title[:200],
                 "score": combined,
+                # Only a business's OWN site proves it has one. An address listed
+                # on a directory page says nothing either way - that is UNKNOWN.
+                "has_website": WEBSITE_OWN if kind == "site" else WEBSITE_UNKNOWN,
             })
             if created:
                 self.stats["emails"] += 1

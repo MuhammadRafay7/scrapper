@@ -3,18 +3,14 @@ Hi {{ first_name|there }},
 Occuin is a new marketplace for pets, livestock and pet supplies, and we're
 opening it to shops and breeders across Europe.
 
-Listing is free: you get a storefront with your own banner, up to 20 listings,
-direct messaging with buyers, and basic analytics. If you sell by auction, live
-auctions are built in. No setup fee and no card needed.
+It's free to list, and you get a page of your own: your name, photos, up to 20
+listings, and buyers messaging you directly. If you sell by auction, live
+auctions are built in. Nothing to install and no card needed.
 
-If that's a fit for {{ site_domain }}, you can set up a shop here:
+If that's useful for {{ business|your business }}, you can set it up here:
 https://www.occuin.com/become-seller?utm_source=outreach&utm_medium=email&utm_campaign={{ campaign_tag }}
 
-If it isn't relevant, ignore this and we won't email again.
+{{ opt_out }}
 
 The Occuin team
 https://www.occuin.com
-
---
-{{ postal_address }}
-Unsubscribe: {{ unsubscribe }}

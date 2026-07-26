@@ -61,8 +61,20 @@ class Sender:
     from_email: str = ""
     reply_to: str = ""
     postal_address: str = ""       # CAN-SPAM requires a real one in the body
+    # Shipping without a postal address is a deliberate, acknowledged choice - see
+    # validate(). It does not remove the legal requirement, it only stops this tool
+    # from blocking the send.
+    omit_postal_address: bool = False
     unsubscribe_url: str = ""
     unsubscribe_mailto: str = ""
+    # Human-readable opt-out shown in the body, so the footer isn't a raw mailto:
+    # URL. This is the opt-out mechanism recipients actually use.
+    opt_out_instruction: str = "Reply with STOP and we won't contact you again."
+    # The List-Unsubscribe header is the clearest "this is bulk" signal a message
+    # can carry, and Gmail files bulk under Promotions. Turning it off is only
+    # defensible because opt_out_instruction gives every recipient a working way
+    # out; never run with both disabled.
+    list_unsubscribe: bool = True
 
 
 def build_message(sender: Sender, to_email: str, to_name: str, subject: str,
@@ -76,11 +88,12 @@ def build_message(sender: Sender, to_email: str, to_name: str, subject: str,
     if sender.reply_to:
         msg["Reply-To"] = sender.reply_to
 
-    link = unsubscribe_link(to_email, sender.unsubscribe_url, sender.unsubscribe_mailto)
-    msg["List-Unsubscribe"] = f"<{link}>"
-    if link.startswith("http"):
-        # RFC 8058: lets Gmail/Outlook show a native one-click unsubscribe.
-        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    if sender.list_unsubscribe:
+        link = unsubscribe_link(to_email, sender.unsubscribe_url, sender.unsubscribe_mailto)
+        msg["List-Unsubscribe"] = f"<{link}>"
+        if link.startswith("http"):
+            # RFC 8058: lets Gmail/Outlook show a native one-click unsubscribe.
+            msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
     # No Auto-Submitted / Precedence: bulk here on purpose. Auto-Submitted is
     # specified for machine notifications (bounces, vacation replies) and filters
     # treat outreach carrying it as suppressible; Precedence: bulk is legacy and
@@ -167,3 +180,58 @@ def is_permanent_failure(exc: Exception) -> bool:
         return all(code >= 500 for code, _ in exc.recipients.values())
     code = getattr(exc, "smtp_code", None)
     return isinstance(code, int) and code >= 500
+
+
+class ImapArchive:
+    """Files a copy of each sent message under a Gmail label.
+
+    Gmail already saves SMTP-sent mail to "Sent"; this puts it under a label of
+    your own too, so outreach is one click to review and does not drown in the
+    rest of the mailbox. Best-effort by design - the campaign records a send as
+    successful the moment SMTP accepts it, and a failure to file a copy must never
+    look like a failure to deliver.
+    """
+
+    def __init__(self, host: str, user: str, password: str, folder: str,
+                 port: int = 993, timeout: float = 30.0):
+        self.host, self.port = host, port
+        self.user, self.password = user, password
+        self.folder, self.timeout = folder, timeout
+        self.conn = None
+        self.errors = 0
+
+    def __enter__(self):
+        try:
+            self._connect()
+        except Exception:
+            self.conn = None            # archiving is optional; sending is not
+        return self
+
+    def __exit__(self, *exc):
+        self.close()
+        return False
+
+    def _connect(self) -> None:
+        import imaplib
+        self.conn = imaplib.IMAP4_SSL(self.host, self.port, timeout=self.timeout)
+        self.conn.login(self.user, self.password)
+        # CREATE fails harmlessly when the label already exists.
+        self.conn.create(f'"{self.folder}"')
+
+    def store(self, msg: EmailMessage) -> bool:
+        if self.conn is None:
+            return False
+        try:
+            self.conn.append(f'"{self.folder}"', r"(\Seen)", None, msg.as_bytes())
+            return True
+        except Exception:
+            self.errors += 1
+            return False
+
+    def close(self) -> None:
+        if self.conn is not None:
+            try:
+                self.conn.logout()
+            except Exception:
+                pass
+            self.conn = None

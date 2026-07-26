@@ -59,11 +59,20 @@ NOMINATIM = "https://nominatim.openstreetmap.org/search"
 EUROPE_CLAMP = (33.0, -25.0, 72.0, 45.0)   # south, west, north, east
 
 
-def build_bbox_query(tag: str, bbox: tuple[float, float, float, float],
-                     timeout: int = 300) -> str:
-    """Query by bounding box - far cheaper than resolving a country area."""
+def _selector(tag: str, no_website: bool = False) -> str:
     key, _, value = tag.partition("=")
-    selector = f'["{key}"="{value}"]' if value else f'["{key}"]'
+    sel = f'["{key}"="{value}"]' if value else f'["{key}"]'
+    if no_website:
+        # Push the filter into Overpass rather than discarding results locally:
+        # the response shrinks by ~80% and the server does far less work.
+        sel += "".join(f'[!"{t}"]' for t in SITE_TAGS)
+    return sel
+
+
+def build_bbox_query(tag: str, bbox: tuple[float, float, float, float],
+                     timeout: int = 300, no_website: bool = False) -> str:
+    """Query by bounding box - far cheaper than resolving a country area."""
+    selector = _selector(tag, no_website)
     s, w, n, e = bbox
     return (
         f"[out:json][timeout:{timeout}];\n"
@@ -103,13 +112,12 @@ async def country_bbox(fetcher: Fetcher, country: str):
     return box if box[0] < box[2] and box[1] < box[3] else None
 
 
-def build_query(country: str, tags: list[str], timeout: int = 180) -> str:
+def build_query(country: str, tags: list[str], timeout: int = 180,
+                no_website: bool = False) -> str:
     """One Overpass QL query for a country, unioning every configured tag filter."""
     clauses = []
     for tag in tags:
-        key, _, value = tag.partition("=")
-        selector = f'["{key}"="{value}"]' if value else f'["{key}"]'
-        clauses.append(f"  nwr{selector}(area.searchArea);")
+        clauses.append(f"  nwr{_selector(tag, no_website)}(area.searchArea);")
     body = "\n".join(clauses)
     return (
         f"[out:json][timeout:{timeout}];\n"
@@ -189,8 +197,10 @@ async def harvest(cfg: Config, store: Store, fetcher: Fetcher) -> dict[str, int]
         bbox = None            # looked up lazily, only if an area query fails
         for j, tag in enumerate(osm.tags):
             payloads = []
-            got = await _post_query(fetcher, f"{country}/{tag}",
-                                    build_query(country, [tag]))
+            got = await _post_query(
+                fetcher, f"{country}/{tag}",
+                build_query(country, [tag], no_website=osm.skip_with_website),
+            )
             if got is not None:
                 payloads.append(got)
             else:
@@ -205,7 +215,9 @@ async def harvest(cfg: Config, store: Store, fetcher: Fetcher) -> dict[str, int]
                     for k, cell in enumerate(cells, 1):
                         cell_payload = await _post_query(
                             fetcher, f"{country}/{tag} cell {k}/{len(cells)}",
-                            build_bbox_query(tag, cell), attempts=2,
+                            build_bbox_query(tag, cell,
+                                             no_website=osm.skip_with_website),
+                            attempts=2,
                         )
                         if cell_payload is not None:
                             payloads.append(cell_payload)
@@ -238,7 +250,14 @@ def _store_places(store: Store, cfg: Config, places: list[Place]) -> tuple[int, 
     # keyword gate. This score is what the crawler credits their pages with.
     verified_score = max(cfg.niche.domain_threshold * 2, 10.0)
 
+    skip_webbed = cfg.discovery.osm.skip_with_website
+
     for place in places:
+        # Prospecting mode: a business that already runs its own website is not
+        # the target, so we neither keep its email nor queue its site to crawl.
+        if skip_webbed and place.website:
+            continue
+
         site_domain = ""
         if place.website:
             url = normalize_url(place.website)
@@ -272,6 +291,7 @@ def _store_places(store: Store, cfg: Config, places: list[Place]) -> tuple[int, 
             "source_url": f"https://www.openstreetmap.org/{place.osm_id}",
             "page_title": place.name,
             "score": verified_score,
+            "has_website": 1 if place.website else 0,
         })
         if created:
             emails += 1

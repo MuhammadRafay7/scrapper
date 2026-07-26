@@ -26,15 +26,19 @@ sender:
   from_email: "velos.coo@gmail.com"
   reply_to: "velos.coo@gmail.com"
 
-  # >>> THE ONE LINE YOU MUST FILL IN <<<
-  # A real geographic address for Occuin - business, not home. Required by
-  # CAN-SPAM and by the EU e-Commerce Directive for commercial email, and
-  # `mail check` will refuse to send while this is empty. A virtual office or
-  # PO box is fine.
+  # Sending without a postal address is a deliberate choice here. The legal
+  # requirement (CAN-SPAM, EU e-Commerce Directive) does not go away - this flag
+  # only stops the tool from blocking the send. Fill postal_address in and set
+  # this back to false the moment Occuin has a registered address.
   postal_address: ""
+  omit_postal_address: true
 
-  # Opt-out requests arrive as ordinary mail in the Gmail inbox above. When one
-  # comes in, run:  python -m scrapper mail suppress -c <this file> <address>
+  # What the reader sees. The raw mailto: URL stays out of the body and rides in
+  # the List-Unsubscribe header instead, where Gmail/Outlook can use it.
+  opt_out_instruction: "Not interested? Reply with STOP and we won't contact you again."
+  # Opt-outs arrive as ordinary replies in the Gmail inbox above. YOU MUST READ
+  # THEM. When one comes in, run:
+  #   python -m scrapper mail suppress -c <this file> <address>
   unsubscribe_mailto: "velos.coo@gmail.com"
   # Better, once /unsubscribe exists on the site - enables one-click unsubscribe
   # in Gmail/Outlook, which measurably helps inbox placement:
@@ -48,8 +52,11 @@ smtp:
   password_env: SMTP_PASSWORD
 
 message:
-  subject: "A free booking page for {{ site_domain }}"
-  text_file: ../bodies/vets-en.txt
+  # Variant B, measured: reaches the Gmail Primary tab. No UTM parameters, one
+  # link, no promotional vocabulary, ends on a question. Changing any of those
+  # risks dropping back into Promotions - retest if you edit this.
+  subject: "Occuin - a page for {{ business|your practice }}?"
+  text_file: ../bodies/vets-primary.txt
 
 extra:
   campaign_tag: "vets-eu"       # lands in the UTM, so signups are attributable
@@ -63,13 +70,18 @@ audience:
   personal_only: false
   matching_domain_only: true
   max_per_domain: 1
+  # Only businesses with no website of their own - the ones a free storefront
+  # actually helps. Turn off to reach the full scraped audience.
+  no_website_only: true
   limit: 0
   exclude_domains: []
 
 throttle:
-  # Free Gmail hard-stops around 500 recipients/day. These sit far below that
-  # deliberately: a brand-new sender ramps slowly or it gets filtered.
+  # Free Gmail hard-stops at ~500 recipients/day; the real limit is complaint
+  # rate, not that counter. 200/day is the top of what a consumer account should
+  # carry for cold mail - do not go to 500. Counted PER SENDING ACCOUNT, so two
+  # campaigns on this mailbox share this budget.
   delay_seconds: 20
-  per_hour: 10
-  per_day: 40
+  per_hour: 40
+  per_day: 200
   max_per_run: 0

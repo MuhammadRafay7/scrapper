@@ -14,7 +14,7 @@ from scrapper.suppress import Suppression
 
 BODY = """Hi {{ first_name|there }},
 
-about {{ site_domain }} - {{ product }}.
+about {{ business }} - {{ product }}.
 
 {{ sender_name }}
 --
@@ -31,6 +31,7 @@ def make_cfg(tmp_path, **over) -> cm.CampaignConfig:
         suppression_db=str(tmp_path / "suppress.db"),
         preview_dir=str(tmp_path / "previews"),
         log_file=str(tmp_path / "sent.log"),
+        sent_json=str(tmp_path / "sent.jsonl"),
         sender=mailer.Sender(
             from_name="Ada Byron",
             from_email="ada@example.com",
@@ -38,7 +39,7 @@ def make_cfg(tmp_path, **over) -> cm.CampaignConfig:
             postal_address="1 Example St, London",
             unsubscribe_mailto="unsub@example.com",
         ),
-        message=cm.MessageConfig(subject="About {{ site_domain }}", text=BODY),
+        message=cm.MessageConfig(subject="About {{ business|your business }}", text=BODY),
         extra={"product": "a widget"},
     )
     cfg.throttle.delay_seconds = 0
@@ -55,7 +56,8 @@ def seed_store(tmp_path, emails) -> Store:
             "email_domain": e["email"].split("@")[1],
             "site_domain": e.get("site_domain", e["email"].split("@")[1]),
             "kind": e.get("kind", "personal"), "name": e.get("name", ""),
-            "context": "", "source_url": "https://x/", "page_title": "Contact",
+            "context": "", "source_url": "https://x/",
+            "page_title": e.get("page_title", "Test Business"),
             "score": e.get("score", 9.0),
         })
     store.commit()
@@ -65,11 +67,11 @@ def seed_store(tmp_path, emails) -> Store:
 # ----------------------------------------------------------------- templating
 
 def test_render_with_fallback_and_extras():
-    v = {"first_name": "", "site_domain": "acme.com", "product": "a widget",
+    v = {"first_name": "", "business": "Acme Ltd", "product": "a widget",
          "sender_name": "Ada", "postal_address": "1 St", "unsubscribe": "mailto:x"}
     out = mailer.render(BODY, v)
     assert out.startswith("Hi there,")          # fallback used for the empty name
-    assert "about acme.com - a widget." in out
+    assert "about Acme Ltd - a widget." in out
 
 
 def test_unknown_variable_raises_instead_of_shipping():
@@ -86,9 +88,9 @@ def test_unsubscribe_link_forms():
 def test_message_carries_required_headers(tmp_path):
     cfg = make_cfg(tmp_path)
     subject, text, _ = cm.render_for(cfg, {"email": "bob@acme.com", "name": "Bob Smith",
-                                           "site_domain": "acme.com"})
+                                           "site_domain": "acme.com", "page_title": "Acme Ltd"})
     msg = mailer.build_message(cfg.sender, "bob@acme.com", "Bob Smith", subject, text)
-    assert msg["Subject"] == "About acme.com"
+    assert msg["Subject"] == "About Acme Ltd"
     assert msg["List-Unsubscribe"].startswith("<mailto:unsub@example.com")
     assert msg["Reply-To"] == "ada@example.com"
     assert msg["Message-ID"] and msg["Date"]
@@ -326,3 +328,160 @@ def test_no_auto_submitted_or_bulk_headers(tmp_path):
     assert msg["Auto-Submitted"] is None
     assert msg["Precedence"] is None
     assert msg["List-Unsubscribe"]
+
+
+# ------------------------------------------------- data-quality guards (real data)
+
+def test_business_key_separates_freemail_but_merges_a_chain():
+    # 237 shops on gmail.com are 237 businesses...
+    assert cm.business_key("a@gmail.com", "gmail.com") != cm.business_key("b@gmail.com", "gmail.com")
+    # ...while a chain's branch addresses are one.
+    assert cm.business_key("almere@anicura.nl", "anicura.nl") == \
+           cm.business_key("breda@anicura.nl", "anicura.nl")
+
+
+def test_business_name_never_shows_a_consumer_mail_host():
+    # OSM record with no website: site_domain fell back to the email host.
+    assert cm.clean_business_name("Mille et une ferme", "orange.fr", "x@orange.fr") == "Mille et une ferme"
+    assert cm.clean_business_name("", "gmail.com", "x@gmail.com") == ""
+    # Taglines are trimmed off page titles.
+    assert cm.clean_business_name("McCartneys LLP | Simplifying The Path", "mccartneys.co.uk",
+                                  "x@mccartneys.co.uk") == "McCartneys LLP"
+
+
+@pytest.mark.parametrize("raw,email,expected", [
+    # Invented by the name guesser off nearby page text - the address disowns them.
+    ("New Membership", "ellie@beefshorthorn.org", ""),
+    ("Gallery About", "info@studfarm.ie", ""),
+    ("Hedgerow Mana", "contact@hedgerowfarm.co.uk", ""),   # shaped like a real name
+    ("Sires Gallery", "sales@angus.org", ""),
+    # Corroborated by the local part, so safe to greet.
+    ("Lucie Graham", "lucie.graham@farm.ie", "Lucie"),
+    ("Angela TWZ", "adlerangela68@gmail.com", "Angela"),
+])
+def test_junk_names_are_not_used_as_a_greeting(raw, email, expected):
+    assert cm.clean_first_name(raw, email) == expected
+
+
+def test_freemail_contacts_are_not_collapsed_by_the_per_business_cap(tmp_path):
+    store = seed_store(tmp_path, [
+        {"email": f"shop{i}@gmail.com", "site_domain": "gmail.com"} for i in range(5)
+    ] + [{"email": f"branch{i}@anicura.nl", "site_domain": "anicura.nl"} for i in range(4)])
+    out = Store(tmp_path / "outreach.db")
+    sup = Suppression(tmp_path / "suppress.db")
+    cfg = make_cfg(tmp_path)
+    cfg.audience.matching_domain_only = False
+    s = cm.build(cfg, store, out, sup)
+    assert s["queued"] == 6            # 5 independent shops + 1 for the chain
+    assert s["domain_capped"] == 3
+    store.close(); out.close(); sup.close()
+
+
+def test_dry_run_does_not_consume_the_queue(tmp_path):
+    """A dry run must leave every message pending, or the live send that follows
+    would deliver nothing and report success."""
+    cfg, store, out, sup = prepared(tmp_path, 3)
+    with mailer.DryRun(cfg.resolve(cfg.preview_dir)) as t:
+        s = cm.send(cfg, store, out, sup, t, record=False)
+    assert s["sent"] == 3                                   # all three rendered
+    assert out.message_counts(cfg.id) == {"pending": 3}     # none consumed
+    assert cm.remaining_allowance(cfg, out) == (cfg.throttle.per_hour, cfg.throttle.per_day)
+    # the real send then delivers all three
+    assert cm.send(cfg, store, out, sup, FakeTransport())["sent"] == 3
+    store.close(); out.close(); sup.close()
+
+
+# ------------------------------------------- no site but ours may appear in a mail
+
+def test_business_name_is_never_a_domain():
+    assert cm.clean_business_name("petstop.ie") == ""
+    assert cm.clean_business_name("www.petstop.ie") == ""
+    assert cm.clean_business_name("Pet Stop") == "Pet Stop"
+
+
+def test_rendering_refuses_to_name_another_site(tmp_path):
+    cfg = make_cfg(tmp_path)
+    cfg.message.text = "Hi, see petstop.ie for details. {{ postal_address }} {{ unsubscribe }}"
+    with pytest.raises(mailer.TemplateError, match="not ours"):
+        cm.render_for(cfg, {"email": "a@b.com", "name": "", "site_domain": "b.com",
+                            "page_title": ""})
+
+
+def test_our_own_links_are_allowed(tmp_path):
+    cfg = make_cfg(tmp_path)
+    cfg.message.text = ("Set up at https://www.occuin.com/become-seller "
+                        "{{ postal_address }} {{ unsubscribe }}")
+    subject, text, _ = cm.render_for(cfg, {"email": "a@b.com", "name": "",
+                                           "site_domain": "b.com", "page_title": ""})
+    assert "occuin.com/become-seller" in text
+
+
+# ------------------------------------------------- multiple sending accounts
+
+def test_allowance_is_tracked_per_account_not_globally(tmp_path):
+    """Two mailboxes each get their own budget; two campaigns on one mailbox share."""
+    cfg_a, store, out, sup = prepared(tmp_path, 4)
+    cfg_a.throttle.per_day = 2
+    cm.send(cfg_a, store, out, sup, FakeTransport())
+    assert cm.remaining_allowance(cfg_a, out) == (cfg_a.throttle.per_hour - 2, 0)
+
+    cfg_b = make_cfg(tmp_path)
+    cfg_b.sender.from_email = "second@example.com"
+    cfg_b.throttle.per_day = 2
+    assert cm.remaining_allowance(cfg_b, out) == (cfg_b.throttle.per_hour, 2)
+    store.close(); out.close(); sup.close()
+
+
+def test_second_account_does_not_remail_the_first_accounts_contacts(tmp_path):
+    cfg_a, store, out, sup = prepared(tmp_path, 5)          # queues all 5
+    cfg_b = make_cfg(tmp_path)
+    cfg_b.id = "campaign-b"
+    cfg_b.sender.from_email = "second@example.com"
+    s = cm.build(cfg_b, store, out, sup)
+    assert s["queued"] == 0 and s["other_campaign"] == 5
+    store.close(); out.close(); sup.close()
+
+
+def test_scrape_db_is_opened_read_only(tmp_path):
+    """The scrape is usually mid-crawl; outreach must not take a write lock on it."""
+    store = seed_store(tmp_path, [{"email": "a@x.com", "site_domain": "x.com"}])
+    store.close()
+    ro = Store(tmp_path / "scrape.db", readonly=True)
+    assert ro.count_emails() == 1
+    with pytest.raises(Exception):
+        ro.conn.execute("CREATE TABLE nope (x INTEGER)")
+    ro.close()
+
+
+def test_dry_run_renders_whole_queue_without_pacing(tmp_path):
+    """Writing .eml files needs neither the SMTP delay nor the daily allowance."""
+    cfg, store, out, sup = prepared(tmp_path, 6)
+    cfg.throttle.per_day = 2          # would cap a live run at 2
+    cfg.throttle.delay_seconds = 20
+    slept = []
+    with mailer.DryRun(cfg.resolve(cfg.preview_dir)) as t:
+        s = cm.send(cfg, store, out, sup, t, record=False, sleep=slept.append)
+    assert s["sent"] == 6 and slept == []
+    store.close(); out.close(); sup.close()
+
+
+def test_sent_ledger_records_each_contacted_business(tmp_path):
+    """The JSON record is append-only, one object per line, written as it sends."""
+    import json
+    cfg, store, out, sup = prepared(tmp_path, 3)
+    cm.send(cfg, store, out, sup, FakeTransport())
+    lines = (tmp_path / "sent.jsonl").read_text(encoding="utf-8").splitlines()
+    assert len(lines) == 3
+    e = json.loads(lines[0])
+    assert e["email"] == "p0@d0.com"
+    assert e["campaign"] == cfg.id and e["sent_from"] == cfg.sender.from_email
+    assert e["business"] and e["subject"] and e["sent_at"]
+    store.close(); out.close(); sup.close()
+
+
+def test_dry_run_writes_no_ledger_entries(tmp_path):
+    cfg, store, out, sup = prepared(tmp_path, 2)
+    with mailer.DryRun(cfg.resolve(cfg.preview_dir)) as t:
+        cm.send(cfg, store, out, sup, t, record=False)
+    assert not (tmp_path / "sent.jsonl").exists()
+    store.close(); out.close(); sup.close()

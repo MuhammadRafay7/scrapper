@@ -9,17 +9,23 @@ from pathlib import Path
 from .db import Store
 
 COLUMNS = [
-    "email", "name", "kind", "site_domain", "email_domain",
+    "email", "name", "kind", "website_status", "site_domain", "email_domain",
     "score", "hits", "page_title", "source_url", "context",
 ]
 
+WEBSITE_LABELS = {0: "none", 1: "own_site", 2: "unknown"}
+
 
 def query(store: Store, *, min_score: float = 0.0, personal_only: bool = False,
-          matching_domain_only: bool = False, limit: int | None = None) -> list[dict]:
+          matching_domain_only: bool = False, no_website: bool = False,
+          limit: int | None = None) -> list[dict]:
     sql = "SELECT * FROM emails WHERE score >= ?"
     params: list = [min_score]
     if personal_only:
         sql += " AND kind = 'personal'"
+    if no_website:
+        # Anything not confirmed to run its own site: none + unknown.
+        sql += " AND has_website != 1"
     if matching_domain_only:
         sql += " AND email_domain LIKE '%' || site_domain"
     sql += " ORDER BY score DESC, email ASC"
@@ -30,6 +36,7 @@ def query(store: Store, *, min_score: float = 0.0, personal_only: bool = False,
 
 def shape(row: dict) -> dict:
     """One contact as a clean record: the reported columns only, no internal ids."""
+    row = {**row, "website_status": WEBSITE_LABELS.get(row.get("has_website", 0), "unknown")}
     out = {k: row.get(k) for k in COLUMNS}
     out["context"] = (out.get("context") or "").replace("\n", " ").strip()[:200]
     out["name"] = out.get("name") or None

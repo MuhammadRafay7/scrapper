@@ -227,3 +227,38 @@ def test_export_formats(tmp_path):
 
     csv_text = ex.write(rows, tmp_path / "o.csv").read_text()
     assert csv_text.splitlines()[0].startswith("email,name,kind")
+
+
+def test_has_website_flag_and_no_website_export(tmp_path):
+    from scrapper import export as ex
+    store = Store(tmp_path / "w.db")
+    base = {"local_part": "x", "email_domain": "e.de", "site_domain": "e.de",
+            "kind": "role", "name": None, "context": "", "source_url": "u",
+            "page_title": "t", "score": 9.0}
+    store.add_email({**base, "email": "webbed@e.de", "has_website": 1})
+    store.add_email({**base, "email": "bare@e.de"})          # defaults to 0
+    store.commit()
+
+    assert {r["email"] for r in ex.query(store)} == {"webbed@e.de", "bare@e.de"}
+    assert [r["email"] for r in ex.query(store, no_website=True)] == ["bare@e.de"]
+
+    # a later sighting on a real website must upgrade the flag, never downgrade it
+    store.add_email({**base, "email": "bare@e.de", "has_website": 1})
+    assert ex.query(store, no_website=True) == []
+    store.close()
+
+
+def test_osm_skip_with_website(tmp_path):
+    from scrapper.osm import Place, _store_places
+    cfg = Config.load(FIXTURES / "niche.yaml")
+    cfg.discovery.osm.skip_with_website = True
+    places = [
+        Place("node/1", "Has Site", "a@one.de", "https://one.de", "Koln", "DE"),
+        Place("node/2", "No Site", "b@two.de", None, "Bonn", "DE"),
+    ]
+    store = Store(tmp_path / "skip.db")
+    emails, domains = _store_places(store, cfg, places)
+    assert emails == 1 and domains == 0          # the webbed place is skipped whole
+    assert store.count_pages("pending") == 0     # and its site is never queued
+    assert [r["email"] for r in store.conn.execute("SELECT email FROM emails")] == ["b@two.de"]
+    store.close()

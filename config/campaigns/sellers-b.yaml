@@ -1,18 +1,26 @@
 # ---------------------------------------------------------------------------
-# Occuin -> European pet shops, breeders and animal sellers. Pairs with
-# config/occuin-sellers-europe.yaml, which does the scraping.
+# Occuin -> European pet shops/breeders, SECOND sending account.
 #
-#   python -m scrapper mail check   -c config/campaigns/sellers.yaml
-#   python -m scrapper mail build   -c config/campaigns/sellers.yaml
-#   python -m scrapper mail preview -c config/campaigns/sellers.yaml -n 5
-#   python -m scrapper mail test    -c config/campaigns/sellers.yaml --to velos.coo@gmail.com
-#   python -m scrapper mail send    -c config/campaigns/sellers.yaml            # dry run
-#   python -m scrapper mail send    -c config/campaigns/sellers.yaml --live --limit 20
+# Same audience and copy as sellers.yaml, different mailbox. Contacts already
+# queued by any other campaign are skipped automatically (audience.allow_recontact
+# is false), so nobody is mailed twice - run `mail build` on sellers.yaml FIRST,
+# then this one, and the remainder lands here.
+#
+# Throttles are counted per sending account, so this account gets its own 200/day.
+# Note both accounts sign in from the same machine and IP, which links them: a
+# complaint problem on one can take out the other.
+#
+#   python -m scrapper mail check   -c config/campaigns/sellers-b.yaml
+#   python -m scrapper mail build   -c config/campaigns/sellers-b.yaml
+#   python -m scrapper mail preview -c config/campaigns/sellers-b.yaml -n 5
+#   python -m scrapper mail test    -c config/campaigns/sellers-b.yaml --to velos.coo@gmail.com
+#   python -m scrapper mail send    -c config/campaigns/sellers-b.yaml            # dry run
+#   python -m scrapper mail send    -c config/campaigns/sellers-b.yaml --live --limit 20
 #
 # Credentials come from .env (gitignored):  set -a; source .env; set +a
 # ---------------------------------------------------------------------------
 
-id: occuin-sellers-eu
+id: occuin-sellers-eu-b
 
 database: data/occuin-sellers.db   # the scrape, from config/occuin-sellers-europe.yaml
 outreach_db: data/outreach.db   # shared send queue - throttles count across ALL campaigns
@@ -23,8 +31,8 @@ log_file: data/sent.log
 sender:
   # Company identity, no personal details.
   from_name: "Occuin"
-  from_email: "velos.coo@gmail.com"
-  reply_to: "velos.coo@gmail.com"
+  from_email: "animaleum.co@gmail.com"
+  reply_to: "animaleum.co@gmail.com"
 
   # Sending without a postal address is a deliberate choice here. The legal
   # requirement (CAN-SPAM, EU e-Commerce Directive) does not go away - this flag
@@ -39,7 +47,7 @@ sender:
   # Opt-outs arrive as ordinary replies in the Gmail inbox above. YOU MUST READ
   # THEM. When one comes in, run:
   #   python -m scrapper mail suppress -c <this file> <address>
-  unsubscribe_mailto: "velos.coo@gmail.com"
+  unsubscribe_mailto: "animaleum.co@gmail.com"
   # Better, once /unsubscribe exists on the site - enables one-click unsubscribe
   # in Gmail/Outlook, which measurably helps inbox placement:
   # unsubscribe_url: "https://www.occuin.com/unsubscribe"
@@ -48,8 +56,8 @@ smtp:
   host: smtp.gmail.com
   port: 587
   starttls: true
-  user_env: SMTP_USER
-  password_env: SMTP_PASSWORD
+  user_env: SMTP_USER_2
+  password_env: SMTP_PASSWORD_2
 
 message:
   # Variant B, measured: reaches the Gmail Primary tab. No UTM parameters, one
@@ -59,7 +67,7 @@ message:
   text_file: ../bodies/sellers-primary.txt
 
 extra:
-  campaign_tag: "sellers-eu"       # lands in the UTM, so signups are attributable
+  campaign_tag: "sellers-eu-b"       # lands in the UTM, so signups are attributable
 
 audience:
   min_score: 5.0
@@ -74,9 +82,7 @@ audience:
   # Only businesses with no website of their own - the ones a free storefront
   # actually helps. Turn off to reach the full scraped audience.
   no_website_only: true
-  # Half the audience; sellers-b.yaml picks up the remainder on the second
-  # account. Raise or clear this if you retire the second account.
-  limit: 326
+  limit: 0
   exclude_domains: []
 
 throttle:
