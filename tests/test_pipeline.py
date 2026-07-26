@@ -144,3 +144,86 @@ def test_end_to_end_crawl(server, tmp_path):
     assert rows["jane@brightsolar.example"]["name"] == "Jane Fletcher"
     assert store.count_domains("accepted") == 1
     store.close()
+
+
+# ------------------------------------------------------------------------ OSM
+
+def test_overpass_query_builder():
+    from scrapper.osm import build_query
+    q = build_query("DE", ["amenity=veterinary", "healthcare=veterinary"])
+    assert '["ISO3166-1"="DE"]' in q
+    assert 'nwr["amenity"="veterinary"](area.searchArea);' in q
+    assert 'nwr["healthcare"="veterinary"](area.searchArea);' in q
+    assert q.strip().endswith("out center tags;")
+
+
+def test_overpass_parsing_and_storage(tmp_path):
+    from scrapper.osm import parse_overpass, _store_places
+    payload = {"elements": [
+        {"type": "node", "id": 1, "tags": {
+            "amenity": "veterinary", "name": "Tierarztpraxis Muller",
+            "contact:email": "Praxis@tierarzt-muller.de",
+            "website": "https://www.tierarzt-muller.de/", "addr:city": "Koln"}},
+        {"type": "way", "id": 2, "tags": {
+            "amenity": "veterinary", "name": "Dierenkliniek Amsterdam",
+            "website": "http://dierenkliniek-adam.nl"}},
+        {"type": "node", "id": 3, "tags": {
+            "amenity": "veterinary", "name": "No Contact Details"}},
+        {"type": "node", "id": 4, "tags": {
+            "amenity": "veterinary", "name": "Spam", "email": "noreply@x.de"}},
+    ]}
+    places = parse_overpass(payload, "DE")
+    assert len(places) == 3                       # the one with no contact data is dropped
+    assert places[0].email == "praxis@tierarzt-muller.de"   # lowercased
+
+    cfg = Config.load(FIXTURES / "niche.yaml")
+    store = Store(tmp_path / "osm.db")
+    emails, domains = _store_places(store, cfg, places)
+    assert emails == 1                            # noreply@ filtered out
+    assert domains == 2                           # both websites queued
+    # OSM domains are pre-accepted: they skip the keyword gate entirely.
+    assert store.domain_status("tierarzt-muller.de") == "accepted"
+    assert store.count_pages("pending") == 2
+    store.close()
+
+
+def test_unicode_keyword_boundaries():
+    from scrapper.config import NicheConfig
+    n = NicheConfig(strong=["Tierarzt", "vétérinaire", "κτηνίατρος"])
+    assert score_text("Ihre Tierarzt Praxis", n).value > 0
+    assert score_text("clinique vétérinaire de Paris", n).value > 0
+    assert score_text("ο κτηνίατρος μας", n).value > 0
+    # compounds do not match the bare stem - that is why the config lists them
+    assert score_text("Tierarztpraxis", n).value == 0
+
+
+def test_bbox_query_and_grid_split():
+    from scrapper.osm import build_bbox_query, split_bbox, EUROPE_CLAMP
+    q = build_bbox_query("shop=pet", (47.0, 5.0, 55.0, 15.0))
+    assert 'nwr["shop"="pet"](47.0000,5.0000,55.0000,15.0000);' in q
+    cells = split_bbox((0.0, 0.0, 6.0, 6.0), parts=3)
+    assert len(cells) == 9
+    assert cells[0] == (0.0, 0.0, 2.0, 2.0)
+    # the grid must tile the original box exactly, no gaps or overlap
+    assert max(c[2] for c in cells) == 6.0 and max(c[3] for c in cells) == 6.0
+    assert EUROPE_CLAMP[0] < EUROPE_CLAMP[2] and EUROPE_CLAMP[1] < EUROPE_CLAMP[3]
+
+
+def test_export_formats(tmp_path):
+    import json as _json
+    from scrapper import export as ex
+    rows = [{"email": "a@b.de", "name": "Ann Bee", "kind": "personal",
+             "site_domain": "b.de", "email_domain": "b.de", "score": 9.5, "hits": 2,
+             "page_title": "Zucht", "source_url": "https://b.de/kontakt",
+             "context": "line one\nline two", "local_part": "a", "created_at": 123}]
+
+    data = _json.loads(ex.write(rows, tmp_path / "o.json").read_text())
+    assert isinstance(data, list) and data[0]["email"] == "a@b.de"
+    assert "created_at" not in data[0] and "local_part" not in data[0]  # internals dropped
+    assert data[0]["context"] == "line one line two"                    # newlines flattened
+
+    lines = (ex.write(rows, tmp_path / "o.jsonl").read_text()).strip().splitlines()
+    assert len(lines) == 1 and _json.loads(lines[0])["name"] == "Ann Bee"
+
+    csv_text = ex.write(rows, tmp_path / "o.csv").read_text()
+    assert csv_text.splitlines()[0].startswith("email,name,kind")

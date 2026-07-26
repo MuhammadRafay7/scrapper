@@ -50,6 +50,24 @@ CREATE TABLE IF NOT EXISTS emails (
 );
 CREATE INDEX IF NOT EXISTS emails_site ON emails(site_domain);
 CREATE INDEX IF NOT EXISTS emails_score ON emails(score DESC);
+
+-- Outreach. One row per (campaign, recipient); the send loop is resumable the
+-- same way the crawl is. Suppressions live in a separate file (see suppress.py).
+CREATE TABLE IF NOT EXISTS messages (
+    campaign    TEXT NOT NULL,
+    email       TEXT NOT NULL,
+    name        TEXT,
+    site_domain TEXT,
+    status      TEXT NOT NULL DEFAULT 'pending', -- pending|sent|failed|skipped
+    subject     TEXT,
+    error       TEXT,
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    queued_at   INTEGER NOT NULL,
+    sent_at     INTEGER,
+    PRIMARY KEY (campaign, email)
+);
+CREATE INDEX IF NOT EXISTS messages_queue ON messages(campaign, status);
+CREATE INDEX IF NOT EXISTS messages_sent  ON messages(sent_at);
 """
 
 
@@ -88,6 +106,12 @@ class Store:
             "SELECT status FROM domains WHERE domain=?", (domain,)
         ).fetchone()
         return row["status"] if row else None
+
+    def domain_score(self, domain: str) -> float:
+        row = self.conn.execute(
+            "SELECT score FROM domains WHERE domain=?", (domain,)
+        ).fetchone()
+        return (row["score"] or 0.0) if row else 0.0
 
     def domain_kind(self, domain: str) -> str | None:
         row = self.conn.execute(
@@ -173,6 +197,59 @@ class Store:
 
     def count_emails(self) -> int:
         return self.conn.execute("SELECT COUNT(*) c FROM emails").fetchone()["c"]
+
+    # ---------- outreach ----------
+
+    def queue_message(self, campaign: str, email: str, name: str = "",
+                      site_domain: str = "") -> bool:
+        cur = self.conn.execute(
+            "INSERT OR IGNORE INTO messages(campaign, email, name, site_domain, queued_at)"
+            " VALUES (?,?,?,?,?)",
+            (campaign, email, name, site_domain, int(time.time())),
+        )
+        return cur.rowcount > 0
+
+    def pending_messages(self, campaign: str, limit: int) -> list[sqlite3.Row]:
+        return self.conn.execute(
+            "SELECT * FROM messages WHERE campaign=? AND status='pending'"
+            " ORDER BY queued_at, rowid LIMIT ?",
+            (campaign, limit),
+        ).fetchall()
+
+    def finish_message(self, campaign: str, email: str, status: str,
+                       subject: str = "", error: str = "") -> None:
+        self.conn.execute(
+            "UPDATE messages SET status=?, subject=?, error=?, attempts=attempts+1,"
+            " sent_at=? WHERE campaign=? AND email=?",
+            (status, subject[:300], error[:300],
+             int(time.time()) if status == "sent" else None, campaign, email),
+        )
+
+    def sent_since(self, since: int, campaign: str | None = None) -> int:
+        """Sends across all campaigns by default - throttles protect the sending
+        domain's reputation, which is shared, not per-campaign."""
+        if campaign:
+            return self.conn.execute(
+                "SELECT COUNT(*) c FROM messages WHERE status='sent' AND sent_at>=? "
+                "AND campaign=?", (since, campaign),
+            ).fetchone()["c"]
+        return self.conn.execute(
+            "SELECT COUNT(*) c FROM messages WHERE status='sent' AND sent_at>=?", (since,)
+        ).fetchone()["c"]
+
+    def message_counts(self, campaign: str) -> dict[str, int]:
+        rows = self.conn.execute(
+            "SELECT status, COUNT(*) c FROM messages WHERE campaign=? GROUP BY status",
+            (campaign,),
+        ).fetchall()
+        return {r["status"]: r["c"] for r in rows}
+
+    def domains_already_queued(self, campaign: str) -> dict[str, int]:
+        rows = self.conn.execute(
+            "SELECT site_domain d, COUNT(*) c FROM messages WHERE campaign=?"
+            " AND status!='skipped' GROUP BY site_domain", (campaign,),
+        ).fetchall()
+        return {r["d"]: r["c"] for r in rows}
 
     def commit(self) -> None:
         self.conn.commit()

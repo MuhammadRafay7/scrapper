@@ -1,0 +1,80 @@
+# ---------------------------------------------------------------------------
+# Outreach campaign. Reads contacts from the scrape database and mails them.
+#
+# `mail send` is a DRY RUN unless you pass --live. Before it will send at all,
+# `mail check` must pass: identifiable sender, working opt-out, postal address.
+# Those are legal requirements (CAN-SPAM, GDPR/PECR), not style preferences.
+# ---------------------------------------------------------------------------
+
+id: solar-q3-2026          # names the queue; change it to start a fresh campaign
+
+database: data/scrapper.db
+suppression_db: data/suppression.db   # MUST differ from `database` - `reset`
+                                      # deletes the scrape DB, and an unsubscribe
+                                      # is permanent
+preview_dir: data/previews            # dry-run .eml files land here
+log_file: data/sent.log               # append-only audit trail of real sends
+
+sender:
+  from_name: "Your Name"
+  from_email: "you@yourcompany.com"
+  reply_to: "you@yourcompany.com"
+  # Shown in the footer. A real, physical address - a PO box is acceptable.
+  postal_address: "Your Company Ltd, 1 Example Street, London EC1A 1AA, UK"
+  # One of these is required. The URL form gets a native one-click unsubscribe
+  # button in Gmail/Outlook; the mailto form needs no web server.
+  unsubscribe_url: ""                 # e.g. https://yourcompany.com/unsubscribe
+  unsubscribe_mailto: "unsubscribe@yourcompany.com"
+
+smtp:
+  host: ""                  # e.g. smtp.mailgun.org, email-smtp.eu-west-1.amazonaws.com
+  port: 587                 # 587 = STARTTLS, 465 = implicit TLS
+  starttls: true
+  user_env: SMTP_USER       # credentials come from the environment, never this file
+  password_env: SMTP_PASSWORD
+
+message:
+  subject: "Quick question about {{ site_domain }}"
+  # Or put the body in a file next to this config:
+  #   text_file: bodies/solar.txt
+  #   html_file: bodies/solar.html
+  text: |
+    Hi {{ first_name|there }},
+
+    I came across {{ site_domain }} while looking at commercial solar installers
+    in the region, and wanted to ask one question rather than pitch you.
+
+    <your one specific, relevant sentence here>
+
+    If this isn't relevant, just ignore this - I won't follow up.
+
+    {{ sender_name }}
+    {{ from_email }}
+
+    --
+    {{ postal_address }}
+    Unsubscribe: {{ unsubscribe }}
+  html: ""
+
+  # Available variables: name, first_name, email, site_domain, page_title,
+  # sender_name, from_email, postal_address, unsubscribe, plus anything under
+  # `extra:` below. Use {{ var|fallback }} for a default when the value is empty.
+
+extra:
+  product: "our commercial PV monitoring kit"
+
+audience:
+  min_score: 6.0            # scrape score; higher = more confidently on-niche
+  personal_only: false      # true drops info@/sales@ - note those carry MORE
+                            # legal risk under GDPR, not less
+  matching_domain_only: true
+  max_per_domain: 1         # one contact per business - do not raise this lightly
+  limit: 0                  # 0 = queue everyone who qualifies
+  exclude_domains: []
+  #  - existing-customer.com
+
+throttle:
+  delay_seconds: 20         # gap between messages
+  per_hour: 40              # counted across ALL campaigns in this database
+  per_day: 200              # a new sending domain should start far lower (~20/day)
+  max_per_run: 0            # 0 = run until a cap or the queue is exhausted

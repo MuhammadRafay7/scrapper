@@ -1,0 +1,20 @@
+Hi {{ first_name|there }},
+
+Occuin is a new marketplace for pets and livestock, and we've just opened free
+storefronts for veterinary practices.
+
+On the free plan a practice gets a multi-page website with its own logo and
+colours, up to 10 bookable services, an appointment calendar and reviews. No
+setup fee, nothing to install, and no card needed.
+
+If that looks useful for {{ site_domain }}, it takes a few minutes to set up:
+https://www.occuin.com/become-vet?utm_source=outreach&utm_medium=email&utm_campaign={{ campaign_tag }}
+
+If it isn't relevant, ignore this and we won't email again.
+
+The Occuin team
+https://www.occuin.com
+
+--
+{{ postal_address }}
+Unsubscribe: {{ unsubscribe }}

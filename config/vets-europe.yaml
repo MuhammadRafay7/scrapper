@@ -1,0 +1,187 @@
+# ---------------------------------------------------------------------------
+# Veterinary practices across Europe. Zero-cost setup: no search API,
+# OpenStreetMap does the discovery.
+#
+#   python -m scrapper osm    -c config/vets-europe.yaml --countries NL,BE,IE
+#   python -m scrapper crawl  -c config/vets-europe.yaml --max-pages 3000
+#   python -m scrapper export -c config/vets-europe.yaml -o data/vets.csv
+#
+# Start with 2-3 countries, check the CSV by hand, then widen.
+# ---------------------------------------------------------------------------
+
+database: data/vets.db
+
+niche:
+  name: "veterinary practices in Europe"
+
+  # Multilingual by necessity: a German practice site never says "veterinary".
+  # NOTE: compounding languages need the compound listed explicitly - matching is
+  # whole-word, so "Tierarzt" does NOT match inside "Tierarztpraxis".
+  strong:
+    # EN
+    - veterinary clinic
+    - veterinary practice
+    - veterinary surgeon
+    - veterinarian
+    - animal hospital
+    # DE
+    - Tierarzt
+    - Tierärztin
+    - Tierarztpraxis
+    - Tierärzte
+    - Tierklinik
+    - Kleintierpraxis
+    - Tiermedizin
+    # FR
+    - vétérinaire
+    - clinique vétérinaire
+    - cabinet vétérinaire
+    # ES
+    - veterinario
+    - veterinaria
+    - clínica veterinaria
+    # IT
+    - veterinario
+    - clinica veterinaria
+    - ambulatorio veterinario
+    # NL
+    - dierenarts
+    - dierenkliniek
+    - dierenartsenpraktijk
+    # PL
+    - weterynarz
+    - weterynaryjny
+    - lecznica dla zwierząt
+    # PT
+    - veterinário
+    - clínica veterinária
+    # Nordics
+    - veterinär
+    - djurklinik
+    - djursjukhus
+    - dyrlæge
+    - dyreklinik
+    - veterinær
+    - eläinlääkäri
+    # CZ / SK / HU / RO / GR
+    - veterinář
+    - veterinární klinika
+    - állatorvos
+    - medic veterinar
+    - cabinet veterinar
+    - κτηνίατρος
+
+  medium:
+    - vaccination
+    - Impfung
+    - vaccinatie
+    - szczepienia
+    - deworming
+    - neutering
+    - castration
+    - Kastration
+    - spaying
+    - microchip
+    - Sprechzeiten
+    - consultation
+    - Notdienst
+    - emergency vet
+    - pet health
+    - Haustier
+    - huisdier
+    - animaux de compagnie
+    - surgery hours
+    - dentistry
+    - radiology
+
+  weak:
+    - dog
+    - cat
+    - Hund
+    - Katze
+    - hond
+    - kat
+    - chien
+    - chat
+    - perro
+    - gato
+    - clinic
+    - practice
+    - appointment
+    - Termin
+    - afspraak
+
+  negative:
+    - casino
+    - porn
+    - crypto
+    - essay writing
+    - veterinary jobs board
+    - pet insurance comparison
+    - dropshipping
+    - horoscope
+
+  # Deliberately low: OSM-sourced domains are pre-verified by their map tag, and
+  # a small practice homepage can be genuinely thin on text.
+  page_threshold: 3.0
+  domain_threshold: 3.0
+
+discovery:
+  # --- the whole engine, and it is free ---
+  osm:
+    enabled: true
+    tags:
+      - amenity=veterinary
+      - healthcare=veterinary
+    countries: []          # empty = all of Europe; override with --countries
+    per_country_delay: 8.0 # Overpass is donated infrastructure. Be polite.
+
+  search:
+    provider: none         # no budget, no search API needed
+
+  # National veterinary associations / registers publish member directories.
+  # These are the best free supplement to OSM - find the ones for your countries
+  # and paste their member-list URLs here. Check each site's terms first: some
+  # registers forbid reuse of the register for marketing.
+  directories: []
+  #  - https://www.example-vet-association.de/mitglieder
+
+  seeds: []
+  use_sitemaps: true
+  sitemap_max_urls: 120
+
+crawl:
+  concurrency: 20          # spread across thousands of domains, so this is gentle
+  per_domain_delay: 2.0    # small practice sites are often on cheap shared hosting
+  timeout: 20
+  max_pages_per_domain: 12 # a vet site has a contact page and little else worth fetching
+  max_depth: 2
+  max_total_pages: 60000
+  respect_robots: true
+  allow_subdomains: true
+  priority_paths:
+    - contact
+    - kontakt
+    - contacto
+    - contatti
+    - contact-us
+    - impressum        # DE/AT/CH - legally mandated, always has an email
+    - imprint
+    - mentions-legales # FR equivalent
+    - aviso-legal      # ES equivalent
+    - colofon
+    - over-ons
+    - about
+    - team
+    - praxis
+    - praktijk
+    - ueber-uns
+    - equipe
+    - equipo
+    - onas
+    - sprechzeiten
+    - oeffnungszeiten
+
+filters:
+  keep_role_addresses: true      # praxis@ / info@ is the norm for vets, and lower risk
+  require_matching_domain: false

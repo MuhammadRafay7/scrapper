@@ -28,12 +28,32 @@ def query(store: Store, *, min_score: float = 0.0, personal_only: bool = False,
     return [dict(r) for r in store.conn.execute(sql, params).fetchall()]
 
 
+def shape(row: dict) -> dict:
+    """One contact as a clean record: the reported columns only, no internal ids."""
+    out = {k: row.get(k) for k in COLUMNS}
+    out["context"] = (out.get("context") or "").replace("\n", " ").strip()[:200]
+    out["name"] = out.get("name") or None
+    return out
+
+
 def write(rows: list[dict], out: str | Path) -> Path:
     path = Path(out)
     path.parent.mkdir(parents=True, exist_ok=True)
+
     if path.suffix == ".json":
-        path.write_text(json.dumps(rows, indent=2, ensure_ascii=False))
+        # A plain array - directly consumable by JSON.parse / prisma createMany.
+        payload = [shape(r) for r in rows]
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8")
         return path
+
+    if path.suffix == ".jsonl":
+        # One object per line: streamable, appendable, no full-file parse needed.
+        with path.open("w", encoding="utf-8") as fh:
+            for row in rows:
+                fh.write(json.dumps(shape(row), ensure_ascii=False) + "\n")
+        return path
+
     with path.open("w", newline="", encoding="utf-8") as fh:
         writer = csv.DictWriter(fh, fieldnames=COLUMNS, extrasaction="ignore")
         writer.writeheader()

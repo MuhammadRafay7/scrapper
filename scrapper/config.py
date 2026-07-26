@@ -77,8 +77,23 @@ class SearchConfig:
 
 
 @dataclass
+class OsmConfig:
+    """OpenStreetMap/Overpass discovery - free, no API key, no rate cost."""
+    enabled: bool = False
+    # ISO-3166-1 alpha-2 codes; empty means all of Europe.
+    countries: list[str] = field(default_factory=list)
+    # OSM tag filters, e.g. "amenity=veterinary" or "healthcare=veterinary".
+    tags: list[str] = field(default_factory=lambda: ["amenity=veterinary"])
+    per_country_delay: float = 8.0
+    per_tag_delay: float = 4.0
+    # Grid size used when a whole-country query times out (3 -> 9 cells).
+    bbox_grid: int = 3
+
+
+@dataclass
 class DiscoveryConfig:
     search: SearchConfig = field(default_factory=SearchConfig)
+    osm: OsmConfig = field(default_factory=OsmConfig)
     seeds: list[str] = field(default_factory=list)
     seed_file: str | None = None
     # Directory/listing pages: crawled wider, and outbound links are followed
@@ -132,8 +147,10 @@ class Config:
 
         niche = NicheConfig(**_subset(raw.get("niche", {}), NicheConfig))
         search = SearchConfig(**_subset(raw.get("discovery", {}).get("search", {}), SearchConfig))
-        disc_raw = {k: v for k, v in raw.get("discovery", {}).items() if k != "search"}
-        discovery = DiscoveryConfig(search=search, **_subset(disc_raw, DiscoveryConfig))
+        osm = OsmConfig(**_subset(raw.get("discovery", {}).get("osm", {}), OsmConfig))
+        disc_raw = {k: v for k, v in raw.get("discovery", {}).items()
+                    if k not in ("search", "osm")}
+        discovery = DiscoveryConfig(search=search, osm=osm, **_subset(disc_raw, DiscoveryConfig))
         crawl = CrawlConfig(**_subset(raw.get("crawl", {}), CrawlConfig))
         filters = FilterConfig(**_subset(raw.get("filters", {}), FilterConfig))
         # Block lists in YAML extend the built-in defaults rather than replacing them.

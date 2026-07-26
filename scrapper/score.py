@@ -23,8 +23,11 @@ class Score:
 @lru_cache(maxsize=4096)
 def _pattern(phrase: str) -> re.Pattern:
     # Whole-word match, tolerant of hyphen/space variation inside a phrase.
+    # \w is Unicode-aware, so accented and non-Latin keywords bound correctly.
+    # Caveat for compounding languages: "Tierarzt" will NOT match inside
+    # "Tierarztpraxis" - list the compounds explicitly in the config.
     escaped = r"[\s\-_]+".join(re.escape(w) for w in phrase.lower().split())
-    return re.compile(rf"(?<![a-z0-9]){escaped}(?![a-z0-9])", re.I)
+    return re.compile(rf"(?<!\w){escaped}(?!\w)", re.I)
 
 
 def score_text(text: str, niche: NicheConfig, *, cap: int = 3) -> Score:

@@ -72,12 +72,20 @@ class Crawler:
             base = f"{urlparse(resp.final_url or url).scheme}://{urlparse(resp.final_url or url).netloc}"
             await expand_sitemap(self.fetcher, self.store, cfg, domain, base)
 
-        domain_score = self.domain_scores.get(domain, 0.0)
-        if kind != "directory":
-            self._harvest(page, domain, score, domain_score)
+        # Directories are harvested too: many publish member emails directly on
+        # their own listing pages (breed societies, mart directories) rather than
+        # only linking out. The page score still has to clear the niche gate.
+        self._harvest(page, domain, score, self._domain_score(domain))
 
         self._enqueue_links(page, domain, depth, kind)
         self.store.finish_page(url, "done", resp.status, score.value, page.title)
+
+    def _domain_score(self, domain: str) -> float:
+        """Read through to the DB: a resumed crawl has an empty in-memory cache,
+        and OSM-verified domains are scored at registration, never by _gate_domain."""
+        if domain not in self.domain_scores:
+            self.domain_scores[domain] = self.store.domain_score(domain)
+        return self.domain_scores[domain]
 
     def _gate_domain(self, domain: str, url: str, score: Score) -> bool:
         if score.value >= self.cfg.niche.domain_threshold:

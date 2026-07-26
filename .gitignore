@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 data/
+.env
+.env.*
+!.env.example
 config/niche.yaml
 config/seeds.txt
 .pytest_cache/

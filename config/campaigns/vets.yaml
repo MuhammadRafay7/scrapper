@@ -1,0 +1,75 @@
+# ---------------------------------------------------------------------------
+# Occuin -> European veterinary practices. Pairs with config/vets-europe.yaml,
+# which does the scraping.
+#
+#   python -m scrapper mail check   -c config/campaigns/vets.yaml
+#   python -m scrapper mail build   -c config/campaigns/vets.yaml
+#   python -m scrapper mail preview -c config/campaigns/vets.yaml -n 5
+#   python -m scrapper mail test    -c config/campaigns/vets.yaml --to velos.coo@gmail.com
+#   python -m scrapper mail send    -c config/campaigns/vets.yaml            # dry run
+#   python -m scrapper mail send    -c config/campaigns/vets.yaml --live --limit 20
+#
+# Credentials come from .env (gitignored):  set -a; source .env; set +a
+# ---------------------------------------------------------------------------
+
+id: occuin-vets-eu
+
+database: data/vets.db          # the scrape, from config/vets-europe.yaml
+outreach_db: data/outreach.db   # shared send queue - throttles count across ALL campaigns
+suppression_db: data/suppression.db
+preview_dir: data/previews
+log_file: data/sent.log
+
+sender:
+  # Company identity, no personal details.
+  from_name: "Occuin"
+  from_email: "velos.coo@gmail.com"
+  reply_to: "velos.coo@gmail.com"
+
+  # >>> THE ONE LINE YOU MUST FILL IN <<<
+  # A real geographic address for Occuin - business, not home. Required by
+  # CAN-SPAM and by the EU e-Commerce Directive for commercial email, and
+  # `mail check` will refuse to send while this is empty. A virtual office or
+  # PO box is fine.
+  postal_address: ""
+
+  # Opt-out requests arrive as ordinary mail in the Gmail inbox above. When one
+  # comes in, run:  python -m scrapper mail suppress -c <this file> <address>
+  unsubscribe_mailto: "velos.coo@gmail.com"
+  # Better, once /unsubscribe exists on the site - enables one-click unsubscribe
+  # in Gmail/Outlook, which measurably helps inbox placement:
+  # unsubscribe_url: "https://www.occuin.com/unsubscribe"
+
+smtp:
+  host: smtp.gmail.com
+  port: 587
+  starttls: true
+  user_env: SMTP_USER
+  password_env: SMTP_PASSWORD
+
+message:
+  subject: "A free booking page for {{ site_domain }}"
+  text_file: ../bodies/vets-en.txt
+
+extra:
+  campaign_tag: "vets-eu"       # lands in the UTM, so signups are attributable
+
+audience:
+  # vets-europe.yaml runs thresholds at 3.0, and OSM-sourced domains are
+  # pre-accepted by their map tag, so this only needs to clear the noise floor.
+  min_score: 4.0
+  # Vets publish praxis@ / info@ - those are the correct contact for a practice
+  # and carry less GDPR risk than a named individual's address.
+  personal_only: false
+  matching_domain_only: true
+  max_per_domain: 1
+  limit: 0
+  exclude_domains: []
+
+throttle:
+  # Free Gmail hard-stops around 500 recipients/day. These sit far below that
+  # deliberately: a brand-new sender ramps slowly or it gets filtered.
+  delay_seconds: 20
+  per_hour: 10
+  per_day: 40
+  max_per_run: 0

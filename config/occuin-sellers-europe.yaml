@@ -1,0 +1,344 @@
+# ---------------------------------------------------------------------------
+# Occuin seller acquisition: people with animals to sell.
+# Maps to the Category enum: LIVESTOCK, COMPANION, AVIAN, AQUATIC, REPTILE, EXOTIC.
+#
+#   python -m scrapper osm    -c config/occuin-sellers-europe.yaml --countries IE,NL,BE
+#   python -m scrapper crawl  -c config/occuin-sellers-europe.yaml --max-pages 5000
+#   python -m scrapper export -c config/occuin-sellers-europe.yaml -o data/sellers.csv
+#
+# Coverage warning: OSM maps pet shops, stables and breeders well. It does NOT
+# map cattle/goat/sheep breeders - those live in breed-society herd books and
+# livestock mart sites, which have to go in `directories:` below.
+# ---------------------------------------------------------------------------
+
+database: data/occuin-sellers.db
+
+niche:
+  name: "pet, equine and livestock sellers (Occuin seller acquisition)"
+
+  # "sells animals" is the signal. Species alone is not enough - a vet, a shelter
+  # and a pet blog all mention dogs. Selling/breeding language is what separates them.
+  strong:
+    # EN - selling & breeding
+    - for sale
+    - breeder
+    - breeders
+    - stud farm
+    - stud services
+    - puppies for sale
+    - kittens for sale
+    - horses for sale
+    - livestock for sale
+    - cattle for sale
+    - pedigree
+    - bloodline
+    - herd book
+    - stud book
+    # DE
+    - Züchter
+    - Zucht
+    - Zuchtbetrieb
+    - zu verkaufen
+    - Verkaufspferde
+    - Deckhengst
+    - Zuchtstute
+    - Rinderzucht
+    - Ziegenzucht
+    # FR
+    - éleveur
+    - élevage
+    - à vendre
+    - chevaux à vendre
+    - étalon
+    - haras
+    # ES
+    - criador
+    - criadero
+    - ganadería
+    - en venta
+    - se vende
+    - sementales
+    # IT
+    - allevamento
+    - allevatore
+    - in vendita
+    - stallone
+    # NL
+    - fokker
+    - fokkerij
+    - te koop
+    - dekhengst
+    - veehandel
+    # PL
+    - hodowla
+    - hodowca
+    - na sprzedaż
+    - ogier
+    # PT / Nordics
+    - criador de
+    - à venda
+    - uppfödare
+    - till salu
+    - opdrætter
+    - til salg
+    - oppdretter
+
+  medium:
+    # species - confirms which Occuin category, but never qualifies alone
+    - horse
+    - horses
+    - pony
+    - foal
+    - mare
+    - stallion
+    - Pferd
+    - Pferde
+    - cheval
+    - chevaux
+    - caballo
+    - cavallo
+    - paard
+    - koń
+    - cattle
+    - cow
+    - calf
+    - heifer
+    - bull
+    - Rind
+    - Rinder
+    - vache
+    - bovins
+    - vaca
+    - bovini
+    - koe
+    - bydło
+    - goat
+    - goats
+    - kid goat
+    - Ziege
+    - Ziegen
+    - chèvre
+    - cabra
+    - capra
+    - geit
+    - koza
+    - sheep
+    - lamb
+    - Schaf
+    - mouton
+    - oveja
+    - pecora
+    - schaap
+    - poultry
+    - chicken
+    - duck
+    - Geflügel
+    - volaille
+    - aves de corral
+    - puppy
+    - puppies
+    - kitten
+    - kennel
+    - cattery
+    - Welpen
+    - Zwinger
+    - chiot
+    - chenil
+    - cachorro
+    - cucciolo
+    - pup
+    - aquarium fish
+    - reptile
+    - parrot
+    - Papagei
+    - perroquet
+    # trade context
+    - livestock
+    - Vieh
+    - Nutztiere
+    - bétail
+    - ganado
+    - bestiame
+    - vee
+    - inwentarz
+    - auction
+    - Auktion
+    - vente aux enchères
+    - subasta
+    - mart
+    - equestrian
+    - Reitstall
+    - écurie
+    - stables
+    - farm shop
+    - Hofladen
+
+  weak:
+    - animal
+    - animals
+    - Tiere
+    - dieren
+    - animaux
+    - farm
+    - Bauernhof
+    - ferme
+    - granja
+    - boerderij
+    - pet
+    - pets
+    - Haustier
+    - price
+    - Preis
+    - prix
+    - precio
+    - contact
+    - delivery
+
+  negative:
+    # wrong intent: consuming animals, not trading live ones
+    - recipe
+    - Rezept
+    - slaughterhouse
+    - Schlachthof
+    - abattoir
+    - butcher shop
+    - meat processing
+    # not sellers
+    - adoption fee
+    - rescue centre
+    - animal shelter
+    - Tierheim
+    - refuge animalier
+    - protectora de animales
+    - zoo tickets
+    - safari park
+    - petting zoo
+    # generic junk
+    - casino
+    - porn
+    - crypto
+    - essay writing
+    - horoscope
+    - dropshipping
+
+  # Selling language is distinctive, so the gate can sit a little higher than
+  # the vets config without losing real sellers.
+  page_threshold: 6.0
+  domain_threshold: 5.0
+
+discovery:
+  osm:
+    enabled: true
+    tags:
+      - shop=pet                  # COMPANION / AVIAN / AQUATIC / REPTILE retail
+      - amenity=animal_breeding   # breeders, where mapped
+      - leisure=horse_riding      # stables & equestrian centres - many sell horses
+      - shop=agrarian             # farm supply, well connected to livestock keepers
+      - shop=farm                 # farm shops, often direct livestock sellers
+      - amenity=animal_boarding   # catteries/kennels, frequently also breeders
+      - landuse=animal_keeping
+    countries: []                 # empty = all of Europe; override with --countries
+    per_country_delay: 8.0
+
+  search:
+    provider: none                # no budget
+
+  # The cattle/goat/sheep gap is closed here, not by OSM. These are real, verified
+  # public directories - each either links out to breeder sites or publishes
+  # member contact details on its own listing pages (the crawler handles both).
+  #
+  # CHECK TERMS BEFORE ENABLING ANY OF THESE. Several breed registries permit
+  # public browsing but forbid reuse of the register for marketing; that is a
+  # per-site decision and it is yours to make, not the tool's.
+  directories:
+    # --- aggregators: lists OF breed societies (highest leverage) ---
+    - https://www.stackyard.com/pedigree/html/irecattle.html   # 9 Irish cattle societies
+    - https://www.nationalbeefassociation.com/supporters/breed-societies/
+    - https://www.scottishbeefassociation.co.uk/supporters/breed-societies/
+    - https://www.schafzucht-mv.de/landesschaf-und-ziegenzuchtverbaende-in-deutschland/
+    - https://www.landwirtschaftskammer.de/landwirtschaft/tierproduktion/tierzuchtrecht/zuchtverbaende/index.htm
+    - https://www.rvo.nl/onderwerpen/fokkerij                  # NL recognised breeding orgs
+
+    # --- cattle: breeder locators with outbound links to breeder sites ---
+    - https://www.charolais.co.uk/society/breeders/            # verified: links to breeder domains
+    - https://charolais.ie/breeder-locator/
+    - https://irishlimousin.com/
+    - https://limousin.co.uk/
+
+    # --- goats & sheep ---
+    - https://www.ziegenzucht.de/verband/mitglieder/           # member list with contact details
+    - https://thueringer-ziegen.de/
+    - https://www.ziegen-sind-toll.com/                        # BDZ, 13 regional associations
+    - https://www.britishgoatsociety.com/services/contacts/
+    - https://www.bbmga.co.uk/
+    - https://www.britishboergoatsociety.co.uk/
+    - http://www.ibga.ie/
+    - https://pygmygoatclub.org.uk/index.php/contacts/breeders-list
+
+    # --- livestock marts & auctions (also strong Occuin prospects themselves,
+    #     given the live-auction feature) ---
+    - https://www.farmersforum.ie/marts-in-ireland/            # ~94 Irish marts
+    - https://www.stackyard.com/marts/
+    - https://imel.co.uk/uk-livestock-auction-mart-directory/
+    - https://www.auctionfinder.co.uk/find_mart
+
+    # --- horses / studbooks ---
+    - https://angloeuropeanstudbook.co.uk/
+    - https://www.kwpn.nl/
+
+    # --- France: general breeder directories, noisy but large; the niche gate
+    #     does the filtering ---
+    - https://agriculture-selection-bovine.annuairefrancais.fr/index.html
+    - https://agriculteur-eleveur.annuairefrancais.fr/index.html
+    - https://elevage.annuairefrancais.fr/index.html
+
+  # Deliberately NOT included: pagesjaunes.fr and similar general business
+  # directories that prohibit automated extraction in their terms, and the WBFSH
+  # studbook member list, which is a PDF (the crawler only reads HTML).
+
+  seeds: []
+  use_sitemaps: true
+  sitemap_max_urls: 150
+
+crawl:
+  concurrency: 20
+  per_domain_delay: 2.0
+  timeout: 20
+  max_pages_per_domain: 15   # sellers list stock across several pages, unlike vets
+  max_depth: 2
+  max_total_pages: 80000
+  respect_robots: true
+  allow_subdomains: true
+  priority_paths:
+    - contact
+    - kontakt
+    - contacto
+    - contatti
+    - impressum
+    - mentions-legales
+    - about
+    - over-ons
+    - team
+    - sale
+    - for-sale
+    - sales
+    - verkauf
+    - verkaufspferde
+    - te-koop
+    - a-vendre
+    - en-venta
+    - vendita
+    - sprzedaz
+    - breeding
+    - zucht
+    - elevage
+    - stock
+    - animals
+    - horses
+    - cattle
+    - livestock
+    - puppies
+
+filters:
+  keep_role_addresses: true
+  require_matching_domain: false
