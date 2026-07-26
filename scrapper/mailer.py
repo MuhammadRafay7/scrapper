@@ -164,6 +164,14 @@ class Smtp:
         except (smtplib.SMTPServerDisconnected, smtplib.SMTPConnectError):
             self._connect()                       # long runs outlive idle timeouts
             self.conn.send_message(msg)
+        except smtplib.SMTPResponseException as exc:
+            # 421 "Connection expired" - Gmail recycles long-lived connections.
+            # Transient: reconnect once and resend rather than losing the message.
+            if exc.smtp_code != 421:
+                raise
+            self.close()
+            self._connect()
+            self.conn.send_message(msg)
 
     def close(self) -> None:
         if self.conn is not None:

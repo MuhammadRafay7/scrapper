@@ -485,3 +485,15 @@ def test_dry_run_writes_no_ledger_entries(tmp_path):
         cm.send(cfg, store, out, sup, t, record=False)
     assert not (tmp_path / "sent.jsonl").exists()
     store.close(); out.close(); sup.close()
+
+
+def test_transient_failure_stays_pending_for_the_next_run(tmp_path):
+    """A 4xx is 'not now', not 'never' - the message must not be lost."""
+    cfg, store, out, sup = prepared(tmp_path, 2)
+    exc = smtplib.SMTPRecipientsRefused({"p0@d0.com": (421, b"connection expired")})
+    s = cm.send(cfg, store, out, sup, FakeTransport(fail_on="p0@d0.com", exc=exc))
+    assert s["deferred"] == 1 and s["failed"] == 0
+    assert out.message_counts(cfg.id)["pending"] == 1      # retried next time
+    assert sup.blocks("p0@d0.com") is None
+    assert cm.send(cfg, store, out, sup, FakeTransport())["sent"] == 1
+    store.close(); out.close(); sup.close()
