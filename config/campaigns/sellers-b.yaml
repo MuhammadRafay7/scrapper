@@ -86,11 +86,12 @@ audience:
   exclude_domains: []
 
 throttle:
-  # Free Gmail hard-stops at ~500 recipients/day; the real limit is complaint
-  # rate, not that counter. 200/day is the top of what a consumer account should
-  # carry for cold mail - do not go to 500. Counted PER SENDING ACCOUNT, so two
-  # campaigns on this mailbox share this budget.
+  # Raised on request to clear the whole queue in one day (~326 per account).
+  # Gmail's hard stop is ~500/day per consumer account, so this stays under it,
+  # but it is far above a normal ramp for a mailbox with no sending history.
+  # The 20s spacing is what keeps it from looking like a burst - keep it.
+  # Counted PER SENDING ACCOUNT.
   delay_seconds: 20
-  per_hour: 40
-  per_day: 200
+  per_hour: 200
+  per_day: 400
   max_per_run: 0
