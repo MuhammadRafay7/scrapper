@@ -497,7 +497,8 @@ def send(cfg: CampaignConfig, store: Store, out: Store, sup: Suppression, transp
         # the pacing, so it renders the whole queue and you review the batch at once.
         budget = limit or out.message_counts(cfg.id).get("pending", 0)
 
-    stats = {"sent": 0, "suppressed": 0, "failed": 0, "archived": 0, "stopped": ""}
+    stats = {"sent": 0, "suppressed": 0, "failed": 0, "deferred": 0,
+             "archived": 0, "stopped": ""}
     if budget <= 0:
         stats["stopped"] = "hourly" if hourly <= 0 else "daily"
         return stats
@@ -529,12 +530,16 @@ def send(cfg: CampaignConfig, store: Store, out: Store, sup: Suppression, transp
             transport.send(msg)
         except Exception as exc:                       # noqa: BLE001 - recorded, not raised
             if record:
-                out.finish_message(cfg.id, email, "failed", subject, str(exc),
-                                   sender=cfg.sender.from_email)
-                if mailer.is_permanent_failure(exc):
+                permanent = mailer.is_permanent_failure(exc)
+                # A 4xx is the server saying "not now". Leave the row pending so
+                # the next run retries it; only a 5xx is a dead address.
+                out.finish_message(cfg.id, email,
+                                   "failed" if permanent else "pending",
+                                   subject, str(exc), sender=cfg.sender.from_email)
+                if permanent:
                     sup.add(email, "bounce", f"{cfg.id}: {exc}")
                 out.commit()
-            stats["failed"] += 1
+            stats["failed" if mailer.is_permanent_failure(exc) else "deferred"] += 1
             continue
 
         stats["sent"] += 1

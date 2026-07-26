@@ -290,7 +290,8 @@ def cmd_mail_send(args) -> None:
         if archive is not None:
             archive.close()
     verb = "sent" if args.live else "rendered"
-    print(f"{verb} {s['sent']}, failed {s['failed']}, suppressed {s['suppressed']}")
+    print(f"{verb} {s['sent']}, failed {s['failed']}, suppressed {s['suppressed']}"
+          + (f", deferred {s['deferred']} (will retry)" if s.get("deferred") else ""))
     if args.live and s.get("archived"):
         print(f"  labelled {s['archived']} under '{cfg.archive.folder}'")
     if args.live and s["sent"]:
